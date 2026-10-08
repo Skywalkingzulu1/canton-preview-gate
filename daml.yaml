@@ -1,0 +1,10 @@
+sdk-version: 3.4.11
+name: preview-gate
+source: daml
+version: 0.1.0
+dependencies:
+  - daml-prim
+  - daml-stdlib
+  - C:/Users/molel/daml-sdk/sdk-3.4.11/daml-libs/daml-script-2.2.dar
+build-options:
+  - --target=2.2

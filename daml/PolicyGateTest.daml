@@ -1,0 +1,138 @@
+-- | Proof suite for PolicyGate. Every claim in the README maps to one
+-- | scripted check below. Run with `damlc test` (see scripts/verify.sh).
+module PolicyGateTest where
+
+import Daml.Script
+import PolicyGate
+
+setup : Script (Party, Party, Party)
+setup = script do
+  owner <- allocateParty "Owner"
+  payer <- allocateParty "Payer"
+  payee <- allocateParty "Payee"
+  pure (owner, payer, payee)
+
+-- | CLAIM 1: an in-policy payment previews EXECUTABLE and settles directly.
+test_inPolicyExecutes : Script ()
+test_inPolicyExecutes = script do
+  (owner, payer, payee) <- setup
+  pay <- submitMulti [payer, owner] [] do
+    createCmd GatedPayment with
+      owner = owner
+      payer = payer
+      payee = payee
+      amount = 100.0
+      threshold = 1000.0
+      payeeAllowlisted = True
+      memo = "coffee"
+  res <- submit payer do exerciseCmd pay Preview
+  assertMsg "preview must say EXECUTABLE" (res.verdict == "EXECUTABLE")
+  assertMsg "preview must list effects" (length res.effects == 3)
+  _ <- submit payer do exerciseCmd pay Execute
+  [(_, _s)] <- query @SettledPayment payee
+  pure ()
+
+-- | CLAIM 2: an over-threshold payment previews REQUIRES_APPROVAL and
+-- | direct Execute fails.
+test_overThresholdBlocked : Script ()
+test_overThresholdBlocked = script do
+  (owner, payer, payee) <- setup
+  pay <- submitMulti [payer, owner] [] do
+    createCmd GatedPayment with
+      owner = owner
+      payer = payer
+      payee = payee
+      amount = 5000.0
+      threshold = 1000.0
+      payeeAllowlisted = True
+      memo = "acquisition"
+  res <- submit payer do exerciseCmd pay Preview
+  assertMsg "preview must say REQUIRES_APPROVAL" (res.verdict == "REQUIRES_APPROVAL")
+  submitMustFail payer do exerciseCmd pay Execute
+  pure ()
+
+-- | CLAIM 3: a non-allowlisted payee is blocked even below threshold.
+test_firstTimePayeeBlocked : Script ()
+test_firstTimePayeeBlocked = script do
+  (owner, payer, payee) <- setup
+  pay <- submitMulti [payer, owner] [] do
+    createCmd GatedPayment with
+      owner = owner
+      payer = payer
+      payee = payee
+      amount = 10.0
+      threshold = 1000.0
+      payeeAllowlisted = False
+      memo = "first deal"
+  res <- submit payer do exerciseCmd pay Preview
+  assertMsg "preview must say REQUIRES_APPROVAL" (res.verdict == "REQUIRES_APPROVAL")
+  submitMustFail payer do exerciseCmd pay Execute
+  pure ()
+
+-- | CLAIM 4: owner approval unblocks settlement; the grant is single-use
+-- | and the settlement records who approved it.
+test_approvalFlow : Script ()
+test_approvalFlow = script do
+  (owner, payer, payee) <- setup
+  pay <- submitMulti [payer, owner] [] do
+    createCmd GatedPayment with
+      owner = owner
+      payer = payer
+      payee = payee
+      amount = 5000.0
+      threshold = 1000.0
+      payeeAllowlisted = True
+      memo = "acquisition"
+  req <- submit payer do exerciseCmd pay RequestApproval
+  grant <- submit owner do exerciseCmd req Approve
+  _ <- submit payer do exerciseCmd pay ExecuteApproved with grant = grant
+  [(_, s)] <- query @SettledPayment payee
+  assertMsg "settled amount matches" (s.amount == 5000.0)
+  assertMsg "approver recorded" (s.approvedBy == Some owner)
+  -- the grant is consumed: second use must fail
+  submitMustFail payer do exerciseCmd pay ExecuteApproved with grant = grant
+  pure ()
+
+-- | CLAIM 5: owner rejection kills the escalation (no settlement possible
+-- | through that request afterwards).
+test_rejectionKills : Script ()
+test_rejectionKills = script do
+  (owner, payer, payee) <- setup
+  pay <- submitMulti [payer, owner] [] do
+    createCmd GatedPayment with
+      owner = owner
+      payer = payer
+      payee = payee
+      amount = 5000.0
+      threshold = 1000.0
+      payeeAllowlisted = True
+      memo = "acquisition"
+  req <- submit payer do exerciseCmd pay RequestApproval
+  submit owner do exerciseCmd req Reject
+  -- no grant exists, so direct execute still fails and nothing settled
+  submitMustFail payer do exerciseCmd pay Execute
+  rows <- query @SettledPayment payee
+  assertMsg "no settlement recorded" (null rows)
+  pure ()
+
+-- | CLAIM 6: preview matches reality — the settled payment equals what
+-- | the preview described.
+test_previewMatchesReality : Script ()
+test_previewMatchesReality = script do
+  (owner, payer, payee) <- setup
+  pay <- submitMulti [payer, owner] [] do
+    createCmd GatedPayment with
+      owner = owner
+      payer = payer
+      payee = payee
+      amount = 250.0
+      threshold = 1000.0
+      payeeAllowlisted = True
+      memo = "invoice-42"
+  res <- submit payer do exerciseCmd pay Preview
+  _ <- submit payer do exerciseCmd pay Execute
+  [(_, s)] <- query @SettledPayment payee
+  assertMsg "preview amount == settled amount" (res.amount == s.amount)
+  assertMsg "preview payee == settled payee" (res.payee == s.payee)
+  assertMsg "no approver on direct execution" (s.approvedBy == None)
+  pure ()

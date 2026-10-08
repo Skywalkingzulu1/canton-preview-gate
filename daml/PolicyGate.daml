@@ -1,0 +1,162 @@
+-- | Policy-bound payment envelopes with pre-execution preview.
+-- |
+-- | The owner co-signs each envelope, binding policy parameters (threshold,
+-- | allowlist flag) to it. The payer can then:
+-- |   1. `Preview` — see exactly what would happen, committing nothing.
+-- |   2. `Execute` — settle immediately when inside policy.
+-- |   3. `RequestApproval` — escalate to the owner when outside policy.
+module PolicyGate where
+
+-- | Structured result of a pre-execution preview.
+data PreviewResult = PreviewResult
+  with
+    payer : Party
+    payee : Party
+    amount : Decimal
+    verdict : Text
+    effects : [Text]
+  deriving (Eq, Show)
+
+-- | A payment envelope with policy parameters bound at creation.
+-- | Both payer and owner sign: the owner endorses the bounds, the payer
+-- | owns the funds flow. The payee observes.
+template GatedPayment
+  with
+    owner : Party
+    payer : Party
+    payee : Party
+    amount : Decimal
+    threshold : Decimal
+    payeeAllowlisted : Bool
+    memo : Text
+  where
+    signatory payer, owner
+    observer payee
+
+    -- | Non-consuming: compute what WOULD happen, commit nothing.
+    nonconsuming choice Preview : PreviewResult
+      controller payer
+      do pure (previewOf this)
+
+    -- | Settle immediately. Fails unless inside policy.
+    choice Execute : ContractId SettledPayment
+      controller payer
+      do
+        assertMsg ("Amount exceeds policy threshold; request approval first.")
+          (amount <= threshold)
+        assertMsg ("Payee is not allowlisted; request approval first.")
+          payeeAllowlisted
+        create SettledPayment with
+          owner = owner
+          payer = payer
+          payee = payee
+          amount = amount
+          memo = memo
+          approvedBy = None
+
+    -- | Escalate an out-of-policy payment to the owner.
+    -- | Non-consuming: the envelope survives so it can later be settled
+    -- | via ExecuteApproved (which archives it).
+    nonconsuming choice RequestApproval : ContractId ApprovalRequest
+      controller payer
+      do
+        create ApprovalRequest with
+          owner = owner
+          payer = payer
+          payee = payee
+          amount = amount
+          memo = memo
+          payment = self
+
+    -- | Settle against a prior owner grant. Consumes the grant.
+    choice ExecuteApproved : ContractId SettledPayment
+      with
+        grant : ContractId GrantOfApproval
+      controller payer
+      do
+        g <- fetch grant
+        assertMsg "Grant does not match this payment."
+          (g.payer == payer && g.payee == payee && g.amount == amount)
+        exercise grant Consume
+        create SettledPayment with
+          owner = g.owner
+          payer = payer
+          payee = payee
+          amount = amount
+          memo = memo
+          approvedBy = Some g.owner
+
+-- | Pure preview computation shared by the Preview choice.
+previewOf : GatedPayment -> PreviewResult
+previewOf p =
+  let needsApproval = p.amount > p.threshold || not p.payeeAllowlisted
+      verdict = if needsApproval then "REQUIRES_APPROVAL" else "EXECUTABLE"
+  in PreviewResult with
+    payer = p.payer
+    payee = p.payee
+    amount = p.amount
+    verdict = verdict
+    effects =
+      [ "Would create: SettledPayment(" <> showParty p.payer <> " -> " <> showParty p.payee <> ", " <> show p.amount <> ")"
+      , if needsApproval
+          then "Would create: ApprovalRequest(owner=" <> showParty p.owner <> ")"
+          else "No approval contract needed"
+      , "Would archive: GatedPayment"
+      ]
+
+showParty : Party -> Text
+showParty = show
+
+-- | A pending escalation awaiting the owner's decision.
+template ApprovalRequest
+  with
+    owner : Party
+    payer : Party
+    payee : Party
+    amount : Decimal
+    memo : Text
+    payment : ContractId GatedPayment
+  where
+    signatory payer
+    observer owner
+
+    choice Approve : ContractId GrantOfApproval
+      controller owner
+      do
+        create GrantOfApproval with
+          owner = owner
+          payer = payer
+          payee = payee
+          amount = amount
+
+    choice Reject : ()
+      controller owner
+      do pure ()
+
+-- | The owner's signed grant. Single-use: consumed by ExecuteApproved.
+template GrantOfApproval
+  with
+    owner : Party
+    payer : Party
+    payee : Party
+    amount : Decimal
+  where
+    signatory owner
+    observer payer
+
+    choice Consume : ()
+      controller payer
+      do pure ()
+
+-- | The terminal record of a settled payment. Kept as an audit trail.
+template SettledPayment
+  with
+    owner : Party
+    payer : Party
+    payee : Party
+    amount : Decimal
+    memo : Text
+    approvedBy : Optional Party
+  where
+    signatory payer
+    observer payee, owner
