@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PreviewGate — The Pre-Execution Policy Engine for Canton Network &amp; Cross-Chain Capital</title>
+<meta name="description" content="Simulate every Daml transaction locally, enforce custom policy envelopes, and eliminate blind execution risk — without leaking sub-transaction privacy to external nodes." />
+<style>
+  :root {
+    --bg: #070b16;
+    --panel: #0e1526;
+    --card: #131d33;
+    --fg: #eef3fc;
+    --muted: #93a1bd;
+    --green: #86efac;
+    --cyan: #5eead4;
+    --gold: #f5c86b;
+    --border: #233050;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: radial-gradient(1200px 700px at 70% -10%, #16244a 0%, var(--bg) 55%) fixed, var(--bg);
+    color: var(--fg);
+    font-family: ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+    backdrop-filter: blur(12px); background: rgba(7,11,22,.78);
+    border-bottom: 1px solid var(--border);
+  }
+  nav .inner {
+    max-width: 1080px; margin: 0 auto; padding: 12px 22px;
+    display: flex; align-items: center; gap: 22px;
+  }
+  nav .brand { font-weight: 800; color: var(--green); text-decoration: none; font-size: 17px; }
+  nav .links { display: flex; gap: 18px; margin-left: auto; flex-wrap: wrap; }
+  nav .links a { color: var(--muted); text-decoration: none; font-size: 13.5px; font-weight: 600; }
+  nav .links a:hover { color: var(--cyan); }
+  nav .cta {
+    background: var(--green); color: #05240f; font-weight: 800; font-size: 13.5px;
+    padding: 8px 16px; border-radius: 10px; text-decoration: none; white-space: nowrap;
+  }
+  main { max-width: 1080px; margin: 0 auto; padding: 110px 22px 60px; }
+  section { padding: 44px 0; border-top: 1px solid var(--border); }
+  section:first-child { border-top: none; }
+  .kicker {
+    display: inline-block; font-size: 12px; font-weight: 800; letter-spacing: 2.5px;
+    text-transform: uppercase; color: var(--gold);
+    border: 1px solid rgba(245,200,107,.4); background: rgba(245,200,107,.08);
+    padding: 5px 14px; border-radius: 999px; margin-bottom: 18px;
+  }
+  h1 { font-size: clamp(32px, 5vw, 54px); line-height: 1.1; margin-bottom: 16px; }
+  h1 .grad {
+    background: linear-gradient(92deg, var(--green), var(--cyan));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  h2 { font-size: clamp(22px, 3vw, 32px); margin-bottom: 14px; }
+  p.sub { color: var(--muted); font-size: clamp(15px, 2vw, 18px); max-width: 68ch; }
+  .hero-cta { display: flex; gap: 12px; margin-top: 26px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 13px 24px; border-radius: 12px; font-weight: 800;
+    text-decoration: none; font-size: 15px;
+  }
+  .btn.primary { background: var(--green); color: #05240f; }
+  .btn.ghost { color: var(--cyan); border: 1px solid rgba(94,234,212,.4); background: rgba(94,234,212,.06); }
+  .term-split { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 30px; }
+  @media (max-width: 760px) { .term-split { grid-template-columns: 1fr; } }
+  .term {
+    background: #0a1122; border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden;
+  }
+  .term .bar {
+    display: flex; align-items: center; gap: 7px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--muted);
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .term pre { padding: 16px 18px; font-size: 13px; overflow: auto; }
+  code, .mono, pre {
+    font-family: Consolas, "SF Mono", ui-monospace, monospace;
+  }
+  pre .g { color: var(--green); } pre .r { color: #fca5a5; }
+  pre .c { color: var(--cyan); } pre .m { color: var(--muted); }
+  pre .y { color: var(--gold); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 20px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-top: 20px; }
+  @media (max-width: 860px) { .grid2 { grid-template-columns: 1fr; } .grid4 { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .grid4 { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px 22px; }
+  .card h3 { font-size: 16px; margin-bottom: 8px; color: var(--cyan); }
+  .card p, .card li { font-size: 14.5px; color: var(--muted); }
+  .card p b, .card li b { color: var(--fg); }
+  .card ul { list-style: none; }
+  .card li { padding: 3px 0 3px 20px; position: relative; }
+  .card li::before { content: "▸"; position: absolute; left: 2px; color: var(--green); }
+  .tabs { display: flex; gap: 8px; margin: 20px 0 0; }
+  .tabs button {
+    background: var(--card); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 10px 10px 0 0; border-bottom: none; padding: 10px 20px;
+    font-size: 14px; font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .tabs button.on { color: var(--green); background: #0a1122; }
+  .tabpanel { display: none; }
+  .tabpanel.on { display: block; }
+  .tabpanel .term { border-radius: 0 12px 12px 12px; margin-top: 0; }
+  .codewrap { position: relative; }
+  .copybtn {
+    position: absolute; top: 10px; right: 10px; z-index: 2;
+    background: var(--card); color: var(--cyan); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+  .copybtn:hover { border-color: var(--cyan); }
+  ol.steps { margin: 18px 0 0 22px; color: var(--muted); font-size: 15px; }
+  ol.steps li { margin: 10px 0; }
+  ol.steps code { color: var(--cyan); background: rgba(94,234,212,.07); border: 1px solid rgba(94,234,212,.22); padding: 1px 7px; border-radius: 6px; }
+  footer { border-top: 1px solid var(--border); padding: 28px 0 10px; color: var(--muted); font-size: 13px; display: flex; gap: 18px; flex-wrap: wrap; }
+  footer a { color: var(--cyan); text-decoration: none; }
+</style>
+</head>
+<body>
+<nav>
+  <div class="inner">
+    <a class="brand" href="#top">PreviewGate</a>
+    <div class="links">
+      <a href="#gap">The Gap</a>
+      <a href="#arch">Architecture</a>
+      <a href="#cases">Use Cases</a>
+      <a href="#verify">Verify</a>
+      <a href="#start">Quickstart</a>
+    </div>
+    <a class="cta" href="https://github.com/Skywalkingzulu1/canton-preview-gate">GitHub ↗</a>
+  </div>
+</nav>
+
+<main id="top">
+  <!-- HERO -->
+  <section>
+    <span class="kicker">Canton Network · Daml · Cross-Chain</span>
+    <h1>The Pre-Execution Policy Engine for <span class="grad">Canton Network &amp; Cross-Chain Capital.</span></h1>
+    <p class="sub">Simulate every Daml transaction locally, enforce custom policy envelopes, and eliminate blind execution risk — without leaking sub-transaction privacy to external nodes.</p>
+    <div class="hero-cta">
+      <a class="btn primary" href="https://github.com/Skywalkingzulu1/canton-preview-gate">Explore GitHub Repo ↗</a>
+      <a class="btn ghost" href="#verify">Read Spec · Run Verification ↓</a>
+    </div>
+    <div class="term-split">
+      <div class="term">
+        <div class="bar"><span class="dot" style="background:#f87171"></span><span class="dot" style="background:#f5c86b"></span><span class="dot" style="background:#86efac"></span>&nbsp;daml — Canton rail</div>
+<pre><span class="m">$ damlc test</span>
+<span class="g">[*] PolicyGateTest: 6/6 claims held</span>
+<span class="c">[*] Preview → EXECUTABLE | REQUIRES_APPROVAL</span>
+<span class="c">[*] Approval flow → single-use grant → settled</span>
+<span class="g">[+] 0 privacy leaks · Every claim held.</span></pre>
+      </div>
+      <div class="term">
+        <div class="bar"><span class="dot" style="background:#f87171"></span><span class="dot" style="background:#f5c86b"></span><span class="dot" style="background:#86efac"></span>&nbsp;proxy — EVM rail :8545</div>
+<pre><span class="m">$ curl -X POST 127.0.0.1:8545 -d '{...}'</span>
+<span class="c">[*] revm trace → balance deltas, gas, slots</span>
+<span class="c">[*] RiskInspector → no delegatecall · no 7702</span>
+<span class="g">[+] Ollama brief: PASS — broadcast approved</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- 1 THE GAP -->
+  <section id="gap">
+    <span class="kicker">01 · The Execution Gap</span>
+    <h2>Privacy without preview is still blind risk</h2>
+    <div class="grid2">
+      <div class="card"><h3>Institutional privacy vs. blind risk</h3><p>Canton Network provides sub-transaction privacy — but institutional capital and autonomous agents still face <b>execution failure risk before ledger settlement</b>. Intent stays opaque until it commits.</p></div>
+      <div class="card"><h3>The cloud leak trap</h3><p>Standard EVM simulation tools leak transaction intent and treasury metadata to <b>third-party RPC servers</b>. Preview and policy must run where the keys live — locally.</p></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>The answer</h3><p>An <b>air-gapped, local-first simulation and gating firewall</b> running natively in Daml and Rust: rehearse everything, commit only what's inside policy.</p></div>
+  </section>
+
+  <!-- 2 ARCHITECTURE -->
+  <section id="arch">
+    <span class="kicker">02 · Architecture &amp; Dual-Engine Capability</span>
+    <h2>One thesis, two engines</h2>
+    <div class="grid2">
+      <div class="card"><h3>Canton / Daml — PreviewGate</h3><ul><li>Non-consuming <b>Preview</b> choices evaluate policy bounds</li><li><b>GatedPayment</b> rules enforced before state commits</li><li>Owner grants are single-use; settlements carry audit trails</li></ul></div>
+      <div class="card"><h3>EVM Proxy — PreTxSim</h3><ul><li>Drop-in <b>:8545</b> proxy, local <b>revm</b> state traces</li><li>Bridge &amp; agent flows with <b>zero telemetry</b> outbound</li><li><span class="mono">--ci</span> JSON reports for pipelines</li></ul></div>
+    </div>
+    <div class="card" style="margin-top:14px"><h3>AI agent guardrails</h3><p>Local LLMs (Ollama) produce <b>human-readable risk briefs</b> before autonomous payment requests are signed — deterministic checks decide, the model only advises.</p></div>
+  </section>
+
+  <!-- 3 USE CASES -->
+  <section id="cases">
+    <span class="kicker">03 · Key Use Cases</span>
+    <h2>Who runs this</h2>
+    <div class="grid4">
+      <div class="card"><h3>Treasuries</h3><p>Spending limits and multi-signature execution bounds natively in Daml templates.</p></div>
+      <div class="card"><h3>AI agents</h3><p>Sandboxed pre-flight checks — no drained funds, no unintended choice executions.</p></div>
+      <div class="card"><h3>CI/CD gates</h3><p>Automated transaction regression tests via <b>--ci</b> flags in deployment pipelines.</p></div>
+      <div class="card"><h3>Node operators</h3><p>Zero-knowledge, deterministic dry-run capability for network participants.</p></div>
+    </div>
+  </section>
+
+  <!-- 4 VERIFY -->
+  <section id="verify">
+    <span class="kicker">04 · Live Verification</span>
+    <h2>Don't trust us — run it</h2>
+    <div class="tabs">
+      <button class="on" data-tab="t-daml">Canton · Daml</button>
+      <button data-tab="t-evm">EVM · Proxy</button>
+    </div>
+    <div class="tabpanel on" id="t-daml">
+      <div class="term codewrap"><button class="copybtn" data-copy="daml">Copy</button>
+<pre id="code-daml"><span class="m"># Canton Daml sandbox verification</span>
+$ damlc test
+<span class="g">[*] Scenario: non-consuming Preview execution</span>
+<span class="c">[*] Evaluating GatedPayment choice...</span>
+<span class="g">[+] PASS: 6/6 claims verified (0 privacy leaks)</span>
+<span class="g">[+] Status: EXECUTABLE / REQUIRES_APPROVAL</span></pre>
+      </div>
+    </div>
+    <div class="tabpanel" id="t-evm">
+      <div class="term codewrap"><button class="copybtn" data-copy="evm">Copy</button>
+<pre id="code-evm"><span class="m"># EVM proxy verification</span>
+$ curl -X POST 127.0.0.1:8545 \
+  -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","method":"eth_sendTransaction",
+       "params":[{"from":"0x...","to":"0x...","value":"0x1000"}],"id":1}'
+<span class="c">[*] revm trace → RiskInspector → Ollama brief</span>
+<span class="g">[+] PASS — safe to broadcast</span></pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 QUICKSTART -->
+  <section id="start">
+    <span class="kicker">05 · Developer Quickstart</span>
+    <h2>From zero to verified in minutes</h2>
+    <ol class="steps">
+      <li><b style="color:var(--fg)">Clone the repository:</b><br /><code id="clone-cmd">git clone https://github.com/Skywalkingzulu1/canton-preview-gate.git</code></li>
+      <li><b style="color:var(--fg)">Build the Daml core:</b> <code>damlc build</code></li>
+      <li><b style="color:var(--fg)">Execute the test pipeline:</b> <code>damlc test</code> or <code>./verify.ps1</code></li>
+    </ol>
+    <div class="hero-cta">
+      <a class="btn primary" href="https://github.com/Skywalkingzulu1/canton-preview-gate">Explore GitHub Repo ↗</a>
+      <a class="btn ghost" href="https://github.com/Skywalkingzulu1/pretxsim_poc">EVM rail: pretxsim_poc ↗</a>
+    </div>
+  </section>
+
+  <footer>
+    <span>PreviewGate by PreTxSim — rehearse before you settle.</span>
+    <a href="https://github.com/Skywalkingzulu1/canton-preview-gate">canton-preview-gate</a>
+    <a href="https://github.com/Skywalkingzulu1/pretxsim_poc">pretxsim_poc</a>
+  </footer>
+</main>
+
+<script>
+(function () {
+  // tabs
+  var btns = document.querySelectorAll('.tabs button');
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      btns.forEach(function (x) { x.classList.remove('on'); });
+      document.querySelectorAll('.tabpanel').forEach(function (p) { p.classList.remove('on'); });
+      b.classList.add('on');
+      document.getElementById(b.getAttribute('data-tab')).classList.add('on');
+    });
+  });
+  // copy buttons (with fallback for non-secure contexts)
+  function copyText(t, btn) {
+    function done() {
+      var old = btn.textContent;
+      btn.textContent = 'Copied ✓';
+      setTimeout(function () { btn.textContent = old; }, 1400);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(done, function () { fallback(); });
+    } else { fallback(); }
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = t; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta); done();
+    }
+  }
+  document.querySelectorAll('.copybtn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var id = btn.getAttribute('data-copy') === 'daml' ? 'code-daml' : 'code-evm';
+      copyText(document.getElementById(id).innerText, btn);
+    });
+  });
+})();
+</script>
+</body>
+</html>
